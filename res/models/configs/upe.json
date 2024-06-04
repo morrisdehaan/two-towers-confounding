@@ -1,0 +1,20 @@
+{
+    "name": "upe",
+
+    "hyperparams": {
+        "n_ranks": 30,
+        "encoder_output_size": 64,
+        "ffnn_hidden": [64, 256],
+        "learning_rate": 0.03
+    },
+    "optional_features": ["ltr", "bert"],
+    "train_data_percent_used": 25,
+    "valid_data_percent_used": 25,
+    "batch_size": 256,
+
+    "epochs": 3,
+
+    "pretrained_confounder_params_path": "../res/models/params/upe_logging_policy.pkl",
+    "propensities_path": "../res/propensities/adjacent_chain.csv",
+    "params_file": "upe.pkl"
+}

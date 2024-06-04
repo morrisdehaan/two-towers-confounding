@@ -1,0 +1,18 @@
+{
+    "name": "lambdamart",
+
+    "hyperparams": {
+        "boosting_type": "gbdt",
+        "objective": "lambdarank",
+        "n_estimators": 500,
+        "importance_type": "gain",
+        "metric": "ndcg",
+        "num_leaves": 10,
+        "learning_rate": 0.01,
+        "max_depth": -1
+    },
+    "optional_features": ["ltr", "bert"],
+    "train_data_percent_used": 2,
+
+    "params_file": "lambdamart.txt"
+}
