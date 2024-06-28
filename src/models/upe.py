@@ -1,13 +1,14 @@
 """ Proposed model from the 'Unconfounded Propensity Estimation for Unbiased Ranking' (2023) paper. """
 
 import flax.training
-import flax.training.train_state
+from flax.training.train_state import TrainState
 import jax, jax.numpy as jnp
 import numpy as np
 import flax, flax.linen as nn
-import optax, rax
-import pickle, pandas as pd
+import optax
+import pandas as pd
 from utils import data, loss as loss_fns
+from models import shared
 from functools import partial
 from typing import Dict, Sequence, Callable, Tuple, Any
 
@@ -39,14 +40,13 @@ class FFNN(nn.Module):
 class ConfounderLearner(nn.Module):
     """ Caputures confounding during the first learning cycle. """
 
-    # TODO: rename?
     encoder_output_size: int
-    features: Sequence[str]
+    features: Dict[str, Callable]
     ffnn_hidden: Sequence[int]
     dropout_rate: float
 
     def setup(self):
-        self.encoder = ConfoundEnc(self.encoder_output_size, self.features)
+        self.encoder = ConfoundEnc(self.encoder_output_size, self.features.keys())
         self.ffnn = FFNN(self.ffnn_hidden, self.dropout_rate)
 
     def __call__(self, x: Dict[str, jax.Array], training: bool):
@@ -55,38 +55,38 @@ class ConfounderLearner(nn.Module):
 class PositionEnc(nn.Module):
     """ Position encoder. """
 
-    n_ranks: int
     encoder_output_size: int
 
     @nn.compact
     def __call__(self, x: Dict[str, jax.Array]) -> jax.Array:
-        return nn.Embed(self.n_ranks, self.encoder_output_size)(x["position"])
+        # bias is not necessary, as position in one-hot encoded
+        return nn.Dense(self.encoder_output_size, use_bias=False)(x["position"])
     
 class UPE(nn.Module):
     """ Models unbiased propensity estimation (UPE) in the second learning cycle. """
 
-    n_ranks: int
     encoder_output_size: int
-    confound_features: Sequence[str]
+    confound_features: Dict[str, Callable]
     ffnn_hidden: Sequence[str]
     
     def setup(self):
-        self.position_encoder = PositionEnc(self.n_ranks, self.encoder_output_size)
+        self.position_encoder = PositionEnc(self.encoder_output_size)
         # both are pretrained and frozen
         self.confounder_encoder = ConfoundEnc(self.encoder_output_size, self.confound_features)
         self.ffnn = FFNN(self.ffnn_hidden, 0.0)
 
     @nn.compact
     def __call__(self, x: Dict[str, jax.Array]):
+        # UPE is already fit, therefore dropout need not apply
         return self.ffnn(self.confounder_encoder(x) + self.position_encoder(x), False)
        
 def fit_logging_policy(features: Dict[str, Callable], config: Dict) -> Tuple[ConfounderLearner, Any]:
-    # * training utils *
-    class TrainState(flax.training.train_state.TrainState):
+    # * training utils * # TODO: share
+    class TrainStateDropout(TrainState):
         dropout_key: jax.Array
 
     @partial(jax.jit, static_argnames="loss_fn")
-    def train_step(x, y, state: TrainState, loss_fn: Callable) -> Tuple[TrainState, jax.Array]:
+    def train_step(x, y, state: TrainStateDropout, loss_fn: Callable) -> Tuple[TrainStateDropout, jax.Array]:
         dropout_key = jax.random.fold_in(state.dropout_key, state.step)
 
         def compute_loss(params, x, y):
@@ -96,11 +96,12 @@ def fit_logging_policy(features: Dict[str, Callable], config: Dict) -> Tuple[Con
         return state.apply_gradients(grads=grads), loss
 
     @partial(jax.jit, static_argnames="loss_fn")
-    def valid_step(x, y, state: TrainState, loss_fn: Callable) -> jax.Array:
+    def valid_step(x, y, state: TrainStateDropout, loss_fn: Callable) -> jax.Array:
         pred = state.apply_fn(state.params, x=x, training=False)
         return loss_fn(pred, y, where=x["mask"])
 
     # * load data *
+    features = shared.load_default_features(config["optional_features"])
     labels = { "position": data.position_recipr } | features
 
     train_loader = data.load_dataloader(
@@ -122,7 +123,7 @@ def fit_logging_policy(features: Dict[str, Callable], config: Dict) -> Tuple[Con
     )
     params = model.init(init_key, next(iter(train_loader)), training=True)
 
-    train_state = TrainState.create(
+    train_state = TrainStateDropout.create(
         apply_fn=model.apply,
         params=params,
         tx=optax.adagrad(learning_rate=config["hyperparams"]["learning_rate"]),
@@ -150,41 +151,19 @@ def fit_logging_policy(features: Dict[str, Callable], config: Dict) -> Tuple[Con
         print(f"epoch {epoch}: train loss = {train_loss:.3f} - validation loss = {valid_loss:.3f}")
     return model, train_state.params
 
-def evaluate_logging_policy(ranker: ConfounderLearner, params, top_n: int, data_percent: int) -> Dict[str, float]:
-    """ Evaluates for ndcg@`top_n` and dcg@`top_n`. """
+def load_logging_policy(params_path, config: Dict) -> Tuple[ConfounderLearner, Any]:
+    features = shared.load_default_features(config["optional_features"])
 
-    labels = { "position": data.position_recipr } | ranker.features
-    test_loader = data.load_dataloader("clicks", f"test[:{data_percent}%]", batch_size=512, labels=labels, pad=True)
-
-    ndcgs, dcgs = [], []
-    for batch in test_loader:
-        pred = ranker.apply(params, batch, training=False)        
-        labels = batch["position"]
-
-        ndcgs.extend(rax.ndcg_metric(pred, labels, where=batch["mask"], topn=top_n, reduce_fn=None))
-        dcgs.extend(rax.dcg_metric(pred, labels, where=batch["mask"], topn=top_n, reduce_fn=None))
-    return { f"mean ndcg@{top_n}": np.mean(ndcgs), f"mean dcg@{top_n}": np.mean(dcgs) }
-
-# TODO: move somewhere more general?
-def save_params(params, file: str):
-    state_dict = flax.serialization.to_state_dict(params)
-    pickle.dump(state_dict, open(file, "wb"))
-
-def load_logging_policy(params_path, features: Dict[str, Callable], config: Dict) -> Tuple[ConfounderLearner, Any]:
     model = ConfounderLearner(
         encoder_output_size=config["hyperparams"]["encoder_output_size"],
         features=features,
         ffnn_hidden=config["hyperparams"]["ffnn_hidden"],
         dropout_rate=config["hyperparams"]["dropout_rate"]
     )
-    params = pickle.load(open(params_path, "rb"))
+    params = shared.load_flax_params(params_path)
     return model, params
 
-def fit(features: Dict[str, Callable], config: Dict) -> Tuple[ConfounderLearner, Any]:
-    # TODO: lol
-    class TrainState(flax.training.train_state.TrainState):
-        pass
-
+def fit(config: Dict) -> Tuple[ConfounderLearner, Any]:
     @partial(jax.jit, static_argnames="loss_fn")
     def train_step(x, y, state: TrainState, loss_fn: Callable) -> Tuple[TrainState, jax.Array]:
         def compute_loss(params, x, y):
@@ -199,28 +178,28 @@ def fit(features: Dict[str, Callable], config: Dict) -> Tuple[ConfounderLearner,
         return loss_fn(pred, y, where=x["mask"])
 
     # * load data *
-    labels = { "position": None } | features
+    features = shared.load_default_features(config["optional_features"])
+    labels = features | shared.load_default_features(["position"], n_ranks=config["hyperparams"]["n_ranks"])
 
     train_loader = data.load_dataloader(
-        "clicks", f"train[:{config['train_data_percent_used']}%]", batch_size=config["batch_size"], labels=labels
+        "clicks", f"train[:{config['train_data_percent_used']}%]", config["batch_size"], labels
     )
     valid_loader = data.load_dataloader(
-        "clicks", f"test[:{config['valid_data_percent_used']}%]", batch_size=config["batch_size"], labels=labels
+        "clicks", f"test[:{config['valid_data_percent_used']}%]", config["batch_size"], labels
     )
 
     # * init model *
     init_key = jax.random.key(0)
 
     model = UPE(
-        n_ranks=config["hyperparams"]["n_ranks"],
         encoder_output_size=config["hyperparams"]["encoder_output_size"],
-        features=features,
+        confound_features=features,
         ffnn_hidden=config["hyperparams"]["ffnn_hidden"]
     )
     params = model.init(init_key, next(iter(train_loader)))
 
     # set pretrained params
-    confound_params = pickle.load(open(config["pretrained_confounder_params_path"], "rb"))
+    confound_params = shared.load_flax_params(config["pretrained_confounder_params_path"])
     params["params"]["confounder_encoder"] = confound_params["params"]["encoder"]
     params["params"]["ffnn"] = confound_params["params"]["ffnn"]
 
@@ -251,7 +230,7 @@ def fit(features: Dict[str, Callable], config: Dict) -> Tuple[ConfounderLearner,
         # train
         train_loss = 0.
         for batch in train_loader:
-            x, y = batch, propensities[batch["position"]]
+            x, y = batch, propensities[jnp.argmax(batch["position"], axis=-1)]
             train_state, loss = train_step(x, y, train_state, loss_fn)
             train_loss += loss
         train_loss /= len(train_loader)
@@ -259,24 +238,20 @@ def fit(features: Dict[str, Callable], config: Dict) -> Tuple[ConfounderLearner,
         # validate
         valid_loss = 0.
         for batch in valid_loader:
-            x, y = batch, propensities[batch["position"]]
+            x, y = batch, propensities[jnp.argmax(batch["position"], axis=-1)]
             valid_loss += valid_step(x, y, train_state, loss_fn)
         valid_loss /= len(valid_loader)
 
         print(f"epoch {epoch}: train loss = {train_loss:.3f} - validation loss = {valid_loss:.3f}")
     return model, train_state.params
 
-def evaluate(ranker: UPE, params):
-    # TODO
-    print("TODO: make something up")
-    pass
+def load(params_path, config: Dict) -> Tuple[UPE, Any]:
+    features = shared.load_default_features(config["optional_features"])
 
-def load(params_path, features: Dict[str, Callable], config: Dict) -> Tuple[UPE, Any]:
     model = UPE(
-        n_ranks=config["hyperparams"]["n_ranks"],
         encoder_output_size=config["hyperparams"]["encoder_output_size"],
-        features=features,
+        confound_features=features,
         ffnn_hidden=config["hyperparams"]["ffnn_hidden"]
     )
-    params = pickle.load(open(params_path, "rb"))
+    params = shared.load_flax_params(params_path)
     return model, params

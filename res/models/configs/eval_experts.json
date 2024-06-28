@@ -1,0 +1,13 @@
+{
+    "lpe": "lambdamart.json",
+    "eval_rankers": [
+        "random.json",
+        "expert.json",
+        "naive/naive_point.json",
+        "two_towers/two_towers_point.json",
+        "two_towers_dropout/two_towers_dropout_point.json",
+        "two_towers_upe/two_towers_upe_point.json"
+    ],
+    "ground_truth": "experts",
+    "buckets": 10
+}

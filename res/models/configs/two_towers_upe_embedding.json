@@ -1,0 +1,27 @@
+{
+    "name": "two_towers",
+
+    "bias_tower_type": "embedding",
+    "use_bias_dropout": false,
+
+    "hyperparams": {
+        "n_ranks": 30,
+        "hidden": [256, 256],
+        "bias_hidden": [],
+        "learning_rate": 0.01,
+
+        "encoder_output_size": 64,
+        "ffnn_hidden": [64, 256]
+    },
+    "loss_fn": "pointwise",
+
+    "optional_features": ["ltr", "bert"],
+
+    "train_data_percent_used": 25,
+    "valid_data_percent_used": 25,
+    "batch_size": 512,
+    "epochs": 3,
+
+    "embedding_file": "../res/propensities/upe.csv",
+    "params_file": "two_towers_upe_embedding_point.pkl"
+}

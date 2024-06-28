@@ -1,0 +1,25 @@
+{
+    "name": "two_towers",
+
+    "bias_tower_type": "ffnn",
+    "use_bias_dropout": true,
+
+    "hyperparams": {
+        "n_ranks": 30,
+        "hidden": [256, 256],
+        "bias_hidden": [],
+        "dropout_rate": 0.3,
+        "learning_rate": 0.01
+    },
+    "loss_fn": "listwise",
+
+    "optional_features": ["ltr", "bert"],
+    "optional_bias_features": ["position"],
+
+    "train_data_percent_used": 25,
+    "valid_data_percent_used": 25,
+    "batch_size": 512,
+    "epochs": 3,
+
+    "params_file": "two_towers_dropout_list.pkl"
+}

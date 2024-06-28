@@ -1,0 +1,9 @@
+{
+    "lpe": "lambdamart.json",
+    "eval_rankers": [
+        "random.json",
+        "upe_logging_policy.json"
+    ],
+    "ground_truth": "logging_policy",
+    "buckets": 10
+}

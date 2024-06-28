@@ -1,0 +1,18 @@
+{
+    "name": "naive",
+
+    "hyperparams": {
+        "hidden": [256, 256],
+        "learning_rate": 0.01
+    },
+    "loss_fn": "pointwise",
+
+    "optional_features": ["ltr", "bert"],
+
+    "train_data_percent_used": 25,
+    "valid_data_percent_used": 25,
+    "batch_size": 512,
+    "epochs": 3,
+
+    "params_file": "naive_point.pkl"
+}

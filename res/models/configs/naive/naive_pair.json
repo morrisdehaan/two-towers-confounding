@@ -1,0 +1,19 @@
+{
+    "name": "naive",
+
+    "hyperparams": {
+        "hidden": [256, 256],
+        "learning_rate": 0.01
+    },
+    "loss_fn": "pairwise",
+    "lambdamart_topn": 10,
+
+    "optional_features": ["ltr", "bert"],
+
+    "train_data_percent_used": 25,
+    "valid_data_percent_used": 25,
+    "batch_size": 512,
+    "epochs": 3,
+
+    "params_file": "naive_pair.pkl"
+}

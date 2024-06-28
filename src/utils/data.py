@@ -59,9 +59,9 @@ def load_dataloader(
         name: str, split: str, batch_size: int, labels: Dict[str, Callable | None], pad=True, cache_dir=DEFAULT_CACHE_DIR
     ) -> DataLoader:
     """
-    Args:
-    If `batch_size == -1`, the entire dataset is returned as a single batch.\\
-    If `pad`, all samples in a batch are padded to the longest `n` and a `mask` variable is set.
+    Args:\\
+    * If `batch_size == -1`, the entire dataset is returned as a single batch.\\
+    * If `pad`, all samples in a batch are padded to the longest `n` and a `mask` variable is set.
     Otherwise, to guarantee regularness of the output matrices (without padding), all query-document pairs are bunched into a single array. To preserve listwise information, a `groups` variable is set
     that denotes the number of documents for each query.
 

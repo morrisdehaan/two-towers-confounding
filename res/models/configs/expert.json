@@ -1,6 +1,7 @@
 {
-    "name": "lambdamart",
-
+    "name": "lambdamart_expert",
+    
+    "k-folds": 5,
     "hyperparams": {
         "boosting_type": "gbdt",
         "objective": "lambdarank",
@@ -12,7 +13,6 @@
         "max_depth": -1
     },
     "optional_features": ["ltr", "bert"],
-    "train_data_percent_used": 2,
 
-    "params_file": "lambdamart.txt"
+    "params_file": "expert"
 }
