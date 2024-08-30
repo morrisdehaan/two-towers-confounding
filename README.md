@@ -1,6 +1,6 @@
-# BSc-thesis-ranking
+# Two towers confounding
 
-My thesis is about logging policy induced relevance confounding.
+Code from the paper "Understanding the Effects of the Baidu-ULTR Logging Policy on Two Tower Models"
 
 ## Models:
     RQ 1: Logging Policy Estimation (LPE)
